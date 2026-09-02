@@ -1,0 +1,100 @@
+name: Build and push to GitHub Container Registry
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  packages: write
+
+env:
+  # HARBOR_REG_URL: 'harbor.k8k8kk88.win'
+  # HARBOR_PROJECT_NAME: backend
+  IMAGE_NAME: ftp-mcp-server
+
+jobs:
+  build-and-push:
+    runs-on: ubuntu-latest
+    steps:
+      # 设置时间格式 (yyyyMMddHHmmss)
+      - name: Set formatted timestamp (Shanghai Time)
+        id: timestamp
+        run: |
+          echo "TIMESTAMP=$(TZ=Asia/Shanghai date +'%Y%m%d%H%M%S')" >> $GITHUB_ENV
+      
+      # 设置 Docker 标签：如果触发 ref 是 tag -> 使用 tag 名；否则使用 timestamp
+      - name: Set Docker tags
+        id: image-tag
+        run: |
+          echo "=== Debug: beginning Set Docker tags ==="
+          echo "GITHUB_EVENT_NAME=${GITHUB_EVENT_NAME:-}"
+          echo "GITHUB_REF=${GITHUB_REF:-}"
+          echo "github.event_name=${{ github.event_name }}"
+          echo "github.ref=${{ github.ref }}"
+          echo "github.ref_type=${{ github.ref_type }}"
+          echo "github.ref_name=${{ github.ref_name }}"
+          # 如果 GITHUB_REF 以 refs/tags/ 开头，则提取 tag 名
+          if [[ "${GITHUB_REF}" == refs/tags/* ]]; then
+            TAG_NAME="${GITHUB_REF#refs/tags/}"
+            echo "Detected tag ref: ${TAG_NAME}"
+            echo "IMAGE_TAG=${TAG_NAME}" >> $GITHUB_ENV
+          else
+            echo "No tag ref detected; using TIMESTAMP=${TIMESTAMP}"
+            echo "IMAGE_TAG=${TIMESTAMP}" >> $GITHUB_ENV
+          fi
+          echo "IMAGE_TAG is now set to: $(cat $GITHUB_ENV | grep IMAGE_TAG || true)"
+          echo "=== Debug: end Set Docker tags ==="
+
+      # Log into GitHub Container Registry
+      - name: Log into GitHub Container Registry
+        uses: docker/login-action@v2
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      # - name: Log into Private Container Registry
+      #   uses: docker/login-action@v2
+      #   with:
+      #     registry: harbor.k8k8kk88.win
+      #     username: ${{ secrets.HARBOR_USERNAME }}
+      #     password: ${{ secrets.HARBOR_PASSWORD }}
+
+      # - name: Build and push Docker image
+      #   uses: docker/build-push-action@v4
+      #   with:
+      #     context: .
+      #     file: ./Dockerfile
+      #     push: true
+      #     tags: ${{ env.HARBOR_REG_URL }}/${{ env.HARBOR_PROJECT_NAME }}/${{ env.IMAGE_NAME }}:${{ env.TIMESTAMP }}
+
+      # Build and push to GitHub Container Registry
+      - name: Build and push Docker image to GHCR
+        uses: docker/build-push-action@v4
+        with:
+          context: ./
+          file: ./Dockerfile-supergateway
+          push: true
+          tags: |
+            ghcr.io/${{ github.repository_owner }}/${{ env.IMAGE_NAME }}:${{ env.IMAGE_TAG }}
+            ghcr.io/${{ github.repository_owner }}/${{ env.IMAGE_NAME }}:latest
+      
+      # Make the package public
+      - name: Make package public
+        env:
+          TOKEN: ${{ secrets.GITHUB_TOKEN }}      # 或 ${{ secrets.PKG_TOKEN }}（视权限而定）
+          ORG: yaencn           # 替换为你的 GitHub 组织名称
+          TYPE: container                       # npm, maven, rubygems, nuget, container
+          NAME: ${{ env.IMAGE_NAME }}                       # package 名称或镜像名
+        run: |
+          set -e
+          curl -s -o /dev/null -w "%{http_code}" \
+            -X PUT \
+            -H "Accept: application/vnd.github+json" \
+            -H "Authorization: Bearer ${{ secrets.GITHUB_TOKEN }}" \
+            -d '{"visibility":"public"}' \
+            "https://api.github.com/orgs/${ORG}/packages/${TYPE}/${NAME}/visibility" \
+          || (echo "Failed to set visibility" && exit 1)

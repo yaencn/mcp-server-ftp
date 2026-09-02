@@ -1,0 +1,26 @@
+name: chanpin-ftp-mcp-server
+services:
+  chanpin-ftp-mcp-server:
+  #  build: .
+    image: harbor.scmttec.com/public/chanpin-ftp-mcp-server:v1.2.1
+    container_name: chanpin-ftp-mcp-server
+    ports:
+      - "8000:8000"            # 仅内网访问可写 127.0.0.1:8000:8000
+    environment:
+      FTP_HOST: "ftp.example.com"
+      FTP_PORT: "21"
+      FTP_PROTOCOL: "ftp"          # ftp | sftp
+      FTP_SECURE: "false"          # FTPS 时设 true
+      FTP_USER: "mcp_user"
+      FTP_PASSWORD: "change-me"
+      # SFTP 密钥认证(FTP_PROTOCOL=sftp 时):
+      # FTP_PRIVATE_KEY_PATH: "/keys/id_ed25519"
+      # FTP_PASSPHRASE: "change-me"
+    # volumes:
+    #   - /etc/mcp/ftp-key:/keys:ro
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "node", "-e", "require('net').connect(8000,'127.0.0.1').on('connect',()=>process.exit(0)).on('error',()=>process.exit(1))"]
+      interval: 30s
+      timeout: 3s
+      retries: 3

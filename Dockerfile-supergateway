@@ -1,0 +1,15 @@
+FROM node:24-alpine
+
+WORKDIR /app
+COPY package.json package-lock.json* ./
+COPY tsconfig.json ./
+COPY src ./src
+
+RUN npm install --ignore-scripts \
+ && npm run build \
+ && npm install -g supergateway
+
+EXPOSE 8000
+
+# FTP 参数不在镜像里,运行时通过环境变量注入(见 compose)
+CMD ["supergateway", "--stdio", "node /app/build/index.js", "--outputTransport", "streamableHttp", "--port", "8000"]
